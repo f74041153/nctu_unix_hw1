@@ -14,15 +14,17 @@
 #include <map>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <regex>
+#include <regex.h>
+//#include <regex>
 
 using namespace std;
 
-enum Protocol{ NO, TCP, UDP };
+enum Protocol{ TCP, UDP };
 
 struct Input{
 	bool has_proto;
-	int proto;
+	bool is_udp;
+	bool is_tcp;
 	bool has_fstr;
 	string fstr;
 };
@@ -49,11 +51,11 @@ void parse_arg(int argc, char* argv[],struct Input& input){
 		switch(c){
 			case 't':
 				input.has_proto = true;
-				input.proto = TCP;
+				input.is_tcp = true;
 				break;
 			case 'u':
 				input.has_proto = true;
-				input.proto = UDP;
+				input.is_udp = true;
 				break;
 			default:
 				exit(EXIT_FAILURE);
@@ -62,7 +64,10 @@ void parse_arg(int argc, char* argv[],struct Input& input){
 
 	if(argc-1 > cnt){
 		input.has_fstr = true;
-		input.fstr = argv[argc-1];
+		for(int i=cnt+1,j; i<argc; i++,j++){
+			if(j) input.fstr += " ";
+			input.fstr += argv[i];
+		}
 	}
 }
 
@@ -135,9 +140,25 @@ void show_result(struct NetContent netcontent, struct Input input){
 	char output[1024];
 	sprintf(output,"%-10s%-25s%-25s%s", netcontent.proto.c_str(), netcontent.local_addr.c_str(), \
 					netcontent.foreign_addr.c_str(), netcontent.pid_prog_and_arg.c_str());
-	if(!input.has_fstr || (input.has_fstr && regex_search(output,regex(input.fstr)))){
+/*	if(!input.has_fstr || (input.has_fstr && regex_search(output,regex(input.fstr)))){
 		cout << output << endl;		
 	}
+*/
+	if(input.has_fstr){
+		regex_t reg;
+		int cflags = REG_EXTENDED;
+		const size_t nmatch = 1;
+		regmatch_t pmatch[1];
+		int ret = regcomp(&reg,&input.fstr[0],cflags);
+		if(ret){
+			cout << "invalid regex" << endl;
+			exit(EXIT_FAILURE);
+		}
+		int status = regexec(&reg,output,nmatch,pmatch,0);
+		regfree(&reg);
+		if(status)return;	
+	}	
+	cout << output << endl; 
 }
 
 void list_connection(string proto_u, string proto_l, struct Input input){
@@ -210,19 +231,21 @@ int main(int argc, char* argv[]){
 	
 	struct Input input;
 	input.has_proto = false;
+	input.is_tcp = false;
+	input.is_udp = false;
 	input.has_fstr = false;
 	
 	parse_arg(argc,argv,input);
 
 	traverse_fd();
 
-	if(!input.has_proto || input.proto == TCP){
+	if(!input.has_proto || input.is_tcp){
 		list_connection("TCP","tcp",input);
 	}
 
-	if(!input.has_proto) printf("\n");
+	if(!input.has_proto || (input.is_tcp && input.is_udp)) printf("\n");
 
-	if(!input.has_proto || input.proto == UDP){
+	if(!input.has_proto || input.is_udp){
 		list_connection("UDP","udp",input);
 	}
 
