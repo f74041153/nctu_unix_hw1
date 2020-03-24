@@ -33,7 +33,9 @@ struct NetContent{
 	string proto;
 	string local_addr;
 	string foreign_addr;
-	string pid_prog_and_arg;
+	bool permission;
+	string pid;
+	string prog_and_arg;
 };
 
 map< string, vector<string> > inode2pid;
@@ -45,7 +47,8 @@ void parse_arg(int argc, char* argv[],struct Input& input){
 		{"tcp",0,NULL,'t'},
 		{"udp",0,NULL,'u'}
 	};
-
+	
+	opterr = 0;
 	while((c = getopt_long(argc,argv,optstring,opts,NULL)) != -1){
 		cnt ++;
 		switch(c){
@@ -58,7 +61,9 @@ void parse_arg(int argc, char* argv[],struct Input& input){
 				input.is_udp = true;
 				break;
 			default:
-				exit(EXIT_FAILURE);
+				cnt --;
+				break;
+//				exit(EXIT_FAILURE);
 		}
 	}
 
@@ -111,35 +116,36 @@ void traverse_fd(){
 }
 
 void fetch_cmd(string inode, struct NetContent& netcontent){
-	
-	if(inode2pid[inode].empty()){
-		netcontent.pid_prog_and_arg = "-";
-		return;
-	}	
-	string pid = inode2pid[inode][0];
-	string path = "/proc/" + pid +"/cmdline";
-	string cmd, arg;
-	ifstream ifs(&path[0]);
-	if(!ifs){
-		perror(&path[0]);
-	}else{
-		getline(ifs,cmd);
-		stringstream ss1(cmd);
-		getline(ss1,cmd,'\0');
-		stringstream ss2(cmd);
-		while(getline(ss2,cmd,'/'));
-		netcontent.pid_prog_and_arg = pid + "/" + cmd;
-		while(getline(ss1,arg,'\0')){
-			netcontent.pid_prog_and_arg += " " + arg;
+	netcontent.permission = false;	
+	if(!inode2pid[inode].empty()){
+		netcontent.permission = true;	
+		string pid = inode2pid[inode][0];
+		string path = "/proc/" + pid +"/cmdline";
+		string cmd, arg;
+		ifstream ifs(&path[0]);
+		if(!ifs){
+			perror(&path[0]);
+		}else{
+			getline(ifs,cmd);
+			stringstream ss1(cmd);
+			getline(ss1,cmd,'\0');
+			stringstream ss2(cmd);
+			while(getline(ss2,cmd,'/'));
+			netcontent.pid = pid;
+			netcontent.prog_and_arg = cmd;
+			while(getline(ss1,arg,'\0')){
+				netcontent.prog_and_arg += " " + arg;
+			}
+			ifs.close();
 		}
-		ifs.close();
 	}
 }
 
 void show_result(struct NetContent netcontent, struct Input input){
 	char output[1024];
+	string pid_prog_and_arg = netcontent.permission?(netcontent.pid + "/" + netcontent.prog_and_arg):"-";
 	sprintf(output,"%-10s%-25s%-25s%s", netcontent.proto.c_str(), netcontent.local_addr.c_str(), \
-					netcontent.foreign_addr.c_str(), netcontent.pid_prog_and_arg.c_str());
+					netcontent.foreign_addr.c_str(), pid_prog_and_arg.c_str());
 /*	if(!input.has_fstr || (input.has_fstr && regex_search(output,regex(input.fstr)))){
 		cout << output << endl;		
 	}
@@ -154,7 +160,7 @@ void show_result(struct NetContent netcontent, struct Input input){
 			cout << "invalid regex" << endl;
 			exit(EXIT_FAILURE);
 		}
-		int status = regexec(&reg,output,nmatch,pmatch,0);
+		int status = regexec(&reg,&netcontent.prog_and_arg[0],nmatch,pmatch,0);
 		regfree(&reg);
 		if(status)return;	
 	}	
